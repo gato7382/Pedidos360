@@ -1,0 +1,173 @@
+name: pedidos360-ep5-infra
+
+# Configuración compartida por los tres brokers Kafka.
+x-kafka-env: &kafka-env
+  KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,HOST://0.0.0.0:9092
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,HOST:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_NUM_PARTITIONS: 3
+  KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+  KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+
+x-kafka-broker: &kafka-broker
+  image: confluentinc/cp-kafka:7.5.0
+  depends_on:
+    zookeeper:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "cub", "kafka-ready", "3", "10", "-b", "localhost:29092"]
+    interval: 15s
+    timeout: 12s
+    start_period: 30s
+    retries: 12
+
+# Los nodos RabbitMQ usan los mismos valores para la demo local.
+x-rabbit-env: &rabbit-env
+  RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-local-cookie}
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-pedidos360}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-pedidos360-local}
+
+x-rabbit-node: &rabbit-node
+  image: rabbitmq:4.2.9-management
+  configs:
+    - source: rabbit-cluster
+      target: /etc/rabbitmq/conf.d/30-pedidos360.conf
+  healthcheck:
+    # Permite que los otros nodos arranquen mientras RabbitMQ recupera el quórum.
+    test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+    interval: 10s
+    timeout: 10s
+    start_period: 20s
+    retries: 12
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "127.0.0.1:2181:2181"
+    healthcheck:
+      test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
+      interval: 10s
+      timeout: 8s
+      start_period: 15s
+      retries: 12
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+
+  kafka:
+    <<: *kafka-broker
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,HOST://localhost:9092
+    ports:
+      - "127.0.0.1:9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  kafka-2:
+    <<: *kafka-broker
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:29092,HOST://localhost:9093
+    ports:
+      - "127.0.0.1:9093:9092"
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+
+  kafka-3:
+    <<: *kafka-broker
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:29092,HOST://localhost:9094
+    ports:
+      - "127.0.0.1:9094:9092"
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: pedidos360
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092,kafka-2:29092,kafka-3:29092
+      KAFKA_CLUSTERS_0_READONLY: "false"
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  rabbit-1:
+    <<: *rabbit-node
+    hostname: rabbit-1
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_NODENAME: rabbit@rabbit-1
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbit-1-data:/var/lib/rabbitmq
+
+  rabbit-2:
+    <<: *rabbit-node
+    hostname: rabbit-2
+    depends_on:
+      rabbit-1:
+        condition: service_healthy
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_NODENAME: rabbit@rabbit-2
+    volumes:
+      - rabbit-2-data:/var/lib/rabbitmq
+
+  rabbit-3:
+    <<: *rabbit-node
+    hostname: rabbit-3
+    depends_on:
+      rabbit-1:
+        condition: service_healthy
+      rabbit-2:
+        condition: service_healthy
+    environment:
+      <<: *rabbit-env
+      RABBITMQ_NODENAME: rabbit@rabbit-3
+    volumes:
+      - rabbit-3-data:/var/lib/rabbitmq
+
+configs:
+  rabbit-cluster:
+    content: |
+      cluster_name = pedidos360
+      cluster_formation.peer_discovery_backend = classic_config
+      cluster_formation.classic_config.nodes.1 = rabbit@rabbit-1
+      cluster_formation.classic_config.nodes.2 = rabbit@rabbit-2
+      cluster_formation.classic_config.nodes.3 = rabbit@rabbit-3
+      cluster_formation.discovery_retry_limit = 60
+      cluster_formation.discovery_retry_interval = 1000
+
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+  kafka-2-data:
+  kafka-3-data:
+  rabbit-1-data:
+  rabbit-2-data:
+  rabbit-3-data:

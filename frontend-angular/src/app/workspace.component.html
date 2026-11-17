@@ -1,0 +1,61 @@
+<main class="workspace">
+  <section class="workspace-heading">
+    <div><div class="eyebrow">PEDIDOS360 / OPERACIONES</div><h1>Centro de operaciones</h1></div>
+    <span class="live"><i></i> sesión iniciada</span>
+  </section>
+
+  <nav class="tabs" aria-label="Secciones">
+    <button [class.selected]="activeTab === 'pedidos'" (click)="setTab('pedidos')">Pedidos</button>
+    <button [class.selected]="activeTab === 'catalogo'" (click)="setTab('catalogo')">Catálogo</button>
+    <button [class.selected]="activeTab === 'auditoria'" (click)="setTab('auditoria')">Auditoría</button>
+    <button [class.selected]="activeTab === 'reportes'" (click)="setTab('reportes')">Reportes</button>
+    <button [class.selected]="activeTab === 'administracion'" (click)="setTab('administracion')">Kafka</button>
+  </nav>
+
+  <p class="notice" *ngIf="message" role="status">{{ message }}</p>
+
+  <section *ngIf="activeTab === 'pedidos'" class="panel">
+    <div class="section-title"><div><div class="eyebrow">GESTIÓN DE PEDIDOS</div><h2>Pedidos recientes</h2></div><button class="quiet" (click)="loadOrders()">Actualizar</button></div>
+    <div class="order-create">
+      <label>Producto
+        <select [(ngModel)]="selectedProductId"><option value="">Selecciona</option><option *ngFor="let product of products" [value]="product.id">{{ product.name }} · {{ product.price | currency:'CLP':'symbol-narrow':'1.0-0' }}</option></select>
+      </label>
+      <label>Cantidad<input type="number" min="1" [(ngModel)]="quantity"></label>
+      <label>Comuna<input [(ngModel)]="commune" placeholder="Providencia"></label>
+      <button class="primary" [disabled]="busy || !selectedProductId || quantity < 1" (click)="createOrder()">Crear pedido</button>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Estado</th><th>Total</th><th>Actualizar estado</th></tr></thead>
+      <tbody><tr *ngFor="let order of orders"><td class="mono" [title]="order.id">{{ order.id.slice(0, 8) }}</td><td class="mono" [title]="order.customerId">{{ order.customerId === userId ? 'Mi cuenta' : order.customerId }}</td><td><span class="state">{{ order.state }}</span></td><td>{{ order.total | currency:'CLP':'symbol-narrow':'1.0-0' }}</td><td><select *ngIf="transitions(order).length; else estadoFinal" aria-label="Cambiar estado de pedido" [disabled]="updatingOrders.has(order.id)" (change)="changeState(order, $event)"><option value="">Cambiar estado</option><option *ngFor="let state of transitions(order)" [value]="state">{{ state }}</option></select><ng-template #estadoFinal><span>Estado final</span></ng-template></td></tr>
+      <tr *ngIf="orders.length === 0"><td colspan="5" class="empty">Todavía no hay pedidos.</td></tr></tbody></table></div>
+  </section>
+
+  <section *ngIf="activeTab === 'catalogo'" class="panel">
+    <div class="section-title"><div><div class="eyebrow">PRODUCTOS</div><h2>Catálogo</h2></div></div>
+    <form class="product-form" (ngSubmit)="createProduct()">
+      <label>Nombre<input name="name" required [(ngModel)]="productForm.name"></label>
+      <label>Categoría<input name="category" required [(ngModel)]="productForm.category"></label>
+      <label>Precio CLP<input name="price" type="number" min="1" required [(ngModel)]="productForm.price"></label>
+      <label>Descripción<input name="description" [(ngModel)]="productForm.description"></label>
+      <button class="primary" [disabled]="busy">Agregar producto</button>
+    </form>
+    <div class="product-grid"><article *ngFor="let product of products" class="product"><span class="eyebrow">{{ product.category }}</span><h3>{{ product.name }}</h3><p>{{ product.description }}</p><strong>{{ product.price | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong></article></div>
+  </section>
+
+  <section *ngIf="activeTab === 'auditoria'" class="panel">
+    <div class="section-title"><div><div class="eyebrow">TRAZABILIDAD</div><h2>Eventos procesados</h2></div></div>
+    <h3>Kafka · audit-group</h3><div class="event-list"><div class="event" *ngFor="let row of auditEvents"><span class="event-dot"></span><div><strong>{{ row.tipo }}</strong><p>Pedido {{ row.pedidoId }} · {{ row.estadoNuevo }}</p></div><time>{{ row.fecha | date:'short' }}</time></div><p *ngIf="auditEvents.length === 0" class="empty">Aún no llegan eventos de Kafka.</p></div>
+    <h3>RabbitMQ · consumidor de auditoría</h3><div class="event-list"><div class="event" *ngFor="let row of rabbitEvents"><span class="event-dot amber"></span><div><strong>{{ row.tipo }}</strong><p>Pedido {{ row.pedidoId }}</p></div><time>{{ row.recibidaEn | date:'short' }}</time></div><p *ngIf="rabbitEvents.length === 0" class="empty">Aún no llegan eventos de RabbitMQ.</p></div>
+    <h3>Kafka · audit.timeline</h3><div class="event-list"><div class="event" *ngFor="let row of timelineEvents"><span class="event-dot"></span><div><strong>{{ row.tipo }}</strong><p>Pedido {{ row.pedidoId }} · {{ row.estadoNuevo }}</p></div><time>{{ row.fecha | date:'short' }}</time></div><p *ngIf="timelineEvents.length === 0" class="empty">El consumidor del tópico de auditoría aún no procesa eventos.</p></div>
+  </section>
+
+  <section *ngIf="activeTab === 'reportes'" class="panel">
+    <div class="section-title"><div><div class="eyebrow">ANALÍTICA</div><h2>Resumen de pedidos</h2></div></div>
+    <div class="metrics" *ngIf="summary"><article><span>Pedidos creados</span><strong>{{ summary.totalPedidos }}</strong></article><article><span>Entregados</span><strong>{{ summary.entregados }}</strong></article><article><span>Cancelados</span><strong>{{ summary.cancelados }}</strong></article><article><span>Venta de pedidos</span><strong>{{ summary.ventasCreadas | currency:'CLP':'symbol-narrow':'1.0-0' }}</strong></article><article><span>Tiempo promedio</span><strong>{{ summary.leadTimePromedioSeg | number:'1.0-0' }} s</strong></article></div>
+    <p class="empty" *ngIf="!summary">Esperando eventos del grupo report-group.</p>
+  </section>
+
+  <section *ngIf="activeTab === 'administracion'" class="panel">
+    <div class="section-title"><div><div class="eyebrow">PLATAFORMA DE STREAMING</div><h2>Tópicos Kafka</h2></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Tópico</th><th>Particiones</th><th>Réplicas mín.</th><th>Retención</th><th>Política</th></tr></thead><tbody><tr *ngFor="let topic of topics"><td class="mono">{{ topic.name }}</td><td>{{ topic.partitions }}</td><td>{{ topic.minReplicationFactor }}</td><td>{{ topic.config['retention.ms'] }}</td><td>{{ topic.config['cleanup.policy'] }}</td></tr><tr *ngIf="topics.length === 0"><td colspan="5" class="empty">Accede con un rol Admin para ver el administrador.</td></tr></tbody></table></div>
+  </section>
+</main>
