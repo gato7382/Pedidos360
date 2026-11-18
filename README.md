@@ -11,7 +11,7 @@ Implementación para la entrega EP5. La interfaz de trabajo que usa la pauta es 
 
 ## Inicio rápido
 
-Para desarrollar en Angular, abre una terminal en `frontend-angular/` y ejecuta `npm ci` una vez y luego `npm start`. Abre `http://localhost:4200`; este servidor es solo para desarrollo en tu PC. En **Microsoft Entra → Registros de aplicaciones → Pedidos360-SPA → Autenticación → Aplicación de página única**, agrega `http://localhost:4200/redirect` para ese modo de desarrollo. La configuración incluye el ID de Pedidos360-SPA y el scope delegado `access_as_user` de la API.
+Para desarrollar en Angular, abre una terminal en `frontend-angular/` y ejecuta `npm ci` una vez y luego `npm start`. Abre `http://localhost:4200`; este servidor es solo para desarrollo en tu PC. En **Microsoft Entra → Registros de aplicaciones → Pedidos360-SPA → Autenticación → Aplicación de página única**, agrega `http://localhost:4200/redirect` para ese modo de desarrollo. Las direcciones HTTP por IP de red no son orígenes seguros para MSAL: usa localhost en desarrollo y el Invoke URL HTTPS de API Gateway en AWS. La configuración incluye el ID de Pedidos360-SPA y el scope delegado `access_as_user` de la API.
 
 Con Docker Desktop abierto, inicia primero la infraestructura desde la raíz del proyecto:
 
