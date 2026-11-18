@@ -1,6 +1,6 @@
 # Publicar Pedidos360 con API Gateway y EC2
 
-La app Angular se publica como archivos estáticos en Nginx, puerto 80. El puerto 4200 pertenece a `ng serve` en el computador de desarrollo y no se usa en EC2. El navegador debe abrir el Invoke URL HTTPS de API Gateway. API Gateway reenvía la web a EC2:80 y las llamadas `/api/*` a EC2:3000. Así el enlace del navegador no cambia cuando cambia la IPv4 de la instancia.
+La app Angular se publica como archivos estáticos en Nginx, puerto 80. Ese mismo servidor Nginx también enruta `/api/*` a los microservicios. Por eso API Gateway necesita una sola integración HTTP a EC2:80; las rutas del API Gateway separan la web y la API para aplicar autorización a esta última. El puerto 4200 pertenece a `ng serve` en el computador de desarrollo y no se usa en EC2.
 
 ## 1. Usar los dos Compose sin duplicar infraestructura
 
@@ -18,10 +18,10 @@ Después de copiar/actualizar los archivos del proyecto en EC2, vuelve a `backen
 ```bash
 cd /home/ubuntu/Pedidos360/backend
 docker network ls | grep pedidos360-ep5-infra_default
-if [ ! -f .env ]; then cp .env.ec2.example .env; fi
+if [ ! -f .env ]; then cp .env.example .env; fi
 ```
 
-Edita `.env`: reemplaza `API_ID`, cambia `DB_PASSWORD` y asegúrate de que `RABBITMQ_USER` y `RABBITMQ_PASSWORD` coincidan con los del clúster que ya está iniciado. No compartas esas contraseñas aquí. El archivo de ejemplo usa `admin/admin` para una instalación nueva; cambiar `.env` no cambia usuarios guardados en volúmenes RabbitMQ existentes. Los binds `FRONTEND_BIND=0.0.0.0` y `API_BIND=0.0.0.0` permiten que Gateway alcance los puertos publicados.
+Edita `.env`: añade el origen `https://<API_ID>.execute-api.us-east-1.amazonaws.com` a `FRONTEND_ORIGINS`, cambia `DB_PASSWORD` y asegúrate de que `RABBITMQ_USER` y `RABBITMQ_PASSWORD` coincidan con los del clúster que ya está iniciado. No compartas esas contraseñas aquí. El ejemplo usa `admin/admin` para una instalación nueva; cambiar `.env` no cambia usuarios guardados en volúmenes RabbitMQ existentes. Usa `FRONTEND_BIND=0.0.0.0` para publicar el puerto 80. Deja `API_BIND=127.0.0.1`; API Gateway no necesita acceder al puerto 3000 porque Nginx en el 80 enruta la API.
 
 Desde `backend/`, inicia la aplicación actualizada. Compose retirará los contenedores huérfanos del proyecto `pedidos360` si añades `--remove-orphans`; no uses `-v`, porque elimina volúmenes. Para preservar también los contenedores detenidos mientras confirmas la migración, ejecuta primero sin esa opción:
 
@@ -47,22 +47,26 @@ En **EC2 → Instances → tu instancia → Details**, copia el campo **Public I
 
 La dirección `100.53.254.184` cae dentro del bloque `100.64.0.0/10`, que IETF reserva para direcciones compartidas de Carrier-Grade NAT y que no se enruta globalmente. Si ese valor aparece literalmente como **Public IPv4 address** en AWS, detén la configuración y revisa ese dato de red: API Gateway público no podrá conectarse a una dirección compartida no enrutable. Una IPv4 pública asignada por EC2 se muestra en los detalles de la instancia y puede cambiar al detener/iniciar la instancia.
 
-No necesitas abrir `:4200` en el Security Group. Autoriza entrada TCP en **80** y **3000** para la integración HTTP pública de Gateway. Conserva SSH 22 según tu forma de administrar la instancia. No abras 8080, 15672, 9092 ni 2181 a Internet.
+No necesitas abrir `:4200` ni el puerto 3000 en el Security Group. Autoriza entrada TCP en **80** para la integración HTTP pública de Gateway y conserva SSH 22 según tu forma de administrar la instancia. No abras 8080, 15672, 9092 ni 2181 a Internet.
 
-## 3. Crear las rutas e integraciones HTTP API
+## 3. Crear una integración y dos rutas HTTP API
 
-En **API Gateway → APIs → Pedidos360-Gateway → Routes**, configura estas dos rutas:
+En **API Gateway → APIs → Pedidos360-Gateway → Integrations**, crea o edita una sola integración HTTP:
+
+```text
+http://<IPV4_PUBLICA_EC2>:80
+```
+
+Luego, en **Routes**, conecta las dos rutas a esa misma integración:
 
 | Ruta | Integración | Autorización |
 |---|---|---|
-| `$default` | HTTP URL `http://<IPV4_PUBLICA_EC2>:80` | `NONE` |
-| `ANY /api/{proxy+}` | HTTP URL `http://<IPV4_PUBLICA_EC2>:3000/api/{proxy}` | JWT Entra ID |
+| `$default` | La integración HTTP anterior | `NONE` |
+| `ANY /api/{proxy+}` | La misma integración HTTP | JWT Entra ID |
 
-Si ya existe la ruta amplia `ANY /{proxy+}`, elimínala o cámbiala a `ANY /api/{proxy+}`. Si la dejas, capturará archivos del sitio como `/assets/config.js` y los enviará al backend API, por lo que la interfaz no cargará completa.
+Si ya existe la ruta amplia `ANY /{proxy+}`, elimínala. El `$default` sirve `index.html`, los archivos JS/CSS y `/redirect`; `ANY /api/{proxy+}` captura solo las peticiones de API. Las integraciones HTTP proxy pasan la solicitud al endpoint Nginx. No configures un segundo destino al puerto 3000.
 
-Reemplaza `<IPV4_PUBLICA_EC2>` con la dirección **Public IPv4 address** actual de EC2. En la segunda integración, declara el parámetro de ruta `proxy` para que el sufijo de `/api/...` se reenvíe sin perderlo. Si la consola permite seleccionar el parámetro dinámicamente, selecciona `proxy`; la URL final de destino debe conservar `/api/` seguido de ese valor.
-
-El `$default` route sirve `index.html`, los archivos JS/CSS y la ruta de retorno `/redirect` de Entra. Por eso no le asignes el authorizer. La ruta más específica `ANY /api/{proxy+}` manda la API al proxy Nginx de puerto 3000. El backend Spring vuelve a validar el JWT.
+Reemplaza `<IPV4_PUBLICA_EC2>` por la dirección **Public IPv4 address** actual de EC2. Si la consola muestra un mapeo de ruta para la integración, conserva la ruta completa (`$request.path`) para que Nginx reciba, por ejemplo, `/api/products`. El backend Spring vuelve a validar el JWT.
 
 Para el JWT authorizer de la ruta API, usa:
 
@@ -90,8 +94,8 @@ Sustituye `<API_ID>` por el ID que aparece en el Invoke URL de tu Gateway. Conse
 1. Abre el Invoke URL HTTPS de API Gateway sin sufijo; debe cargar Pedidos360.
 2. Inicia sesión con Microsoft. Si aparece `AADSTS50011`, revisa que la Redirect URI de Entra coincida exactamente con `https://<API_ID>.execute-api.us-east-1.amazonaws.com/redirect`.
 3. Crea o consulta un producto/pedido. Las llamadas del navegador deben ir a `https://<API_ID>.execute-api.us-east-1.amazonaws.com/api/...` y devolver datos.
-4. Un `401` o `403` en `/api/*` apunta a authorizer, audience, issuer o scope. Un timeout de integración apunta a IP de destino, Security Group, puertos 80/3000 o contenedores no saludables.
+4. Un `401` o `403` en `/api/*` apunta a authorizer, audience, issuer o scope. Un timeout de integración apunta a IP de destino, Security Group, puerto 80 o contenedores no saludables.
 
 ## Si cambia la IPv4 de EC2
 
-El Invoke URL de API Gateway, la URL guardada en el navegador y la Redirect URI de Entra se mantienen iguales. Actualiza el host de las dos integraciones (`$default` a puerto 80 y `/api/{proxy+}` a puerto 3000) con la IPv4 pública nueva y espera el auto-deploy. No cambies la URL de la aplicación a `IP:4200`.
+El Invoke URL de API Gateway, la URL guardada en el navegador y la Redirect URI de Entra se mantienen iguales. Actualiza el host de la única integración al puerto 80 con la IPv4 pública nueva y espera el auto-deploy. No cambies la URL de la aplicación a `IP:4200`.
