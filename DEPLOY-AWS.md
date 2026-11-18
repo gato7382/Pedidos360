@@ -2,31 +2,44 @@
 
 La app Angular se publica como archivos estáticos en Nginx, puerto 80. El puerto 4200 pertenece a `ng serve` en el computador de desarrollo y no se usa en EC2. El navegador debe abrir el Invoke URL HTTPS de API Gateway. API Gateway reenvía la web a EC2:80 y las llamadas `/api/*` a EC2:3000. Así el enlace del navegador no cambia cuando cambia la IPv4 de la instancia.
 
-## 1. Configurar el `.env` de EC2
+## 1. Usar los dos Compose sin duplicar infraestructura
 
-En `backend/`, copia `.env.ec2.example` a `.env` y edita estos valores:
+`../docker-compose.yml` levanta ZooKeeper, Kafka, Kafka UI y RabbitMQ. `backend/compose.yaml` levanta solo PostgreSQL, los microservicios y Angular y se conecta a la red Docker `pedidos360-ep5-infra_default`. Así los dos archivos Compose pueden correr a la vez sin duplicar ni volver a publicar los mismos puertos.
 
-- `FRONTEND_ORIGINS`: reemplaza `API_ID` por el ID real del HTTP API. Mantén `http://localhost:4200` solo si usarás Angular local contra el backend de EC2.
-- `DB_PASSWORD`: define una contraseña propia para PostgreSQL.
-- `RABBITMQ_ERLANG_COOKIE`: reemplaza el texto de ejemplo por una cadena aleatoria compartida por los nodos.
-- Conserva `FRONTEND_BIND=0.0.0.0`, `API_BIND=0.0.0.0`, `FRONTEND_PORT=80` y `API_PORT=3000`; API Gateway debe poder alcanzar esos puertos.
-- Mantén `KAFKA_UI_BIND=127.0.0.1` y `RABBIT_UI_BIND=127.0.0.1`; no publiques consolas de administración.
+Antes de reemplazar el Compose antiguo en EC2, detén solo los contenedores del proyecto de aplicación desde `backend/` (esto no borra volúmenes ni toca el clúster `pedidos360-ep5-infra`):
 
-Desde `backend/`, inicia o reconstruye la aplicación:
+```bash
+cd /home/ubuntu/Pedidos360/backend
+docker compose stop
+```
+
+Después de copiar/actualizar los archivos del proyecto en EC2, vuelve a `backend/`, verifica que exista la red y crea `.env` solo si aún no existe:
+
+```bash
+cd /home/ubuntu/Pedidos360/backend
+docker network ls | grep pedidos360-ep5-infra_default
+if [ ! -f .env ]; then cp .env.ec2.example .env; fi
+```
+
+Edita `.env`: reemplaza `API_ID`, cambia `DB_PASSWORD` y asegúrate de que `RABBITMQ_USER` y `RABBITMQ_PASSWORD` coincidan con los del clúster que ya está iniciado. No compartas esas contraseñas aquí. El archivo de ejemplo usa `admin/admin` para una instalación nueva; cambiar `.env` no cambia usuarios guardados en volúmenes RabbitMQ existentes. Los binds `FRONTEND_BIND=0.0.0.0` y `API_BIND=0.0.0.0` permiten que Gateway alcance los puertos publicados.
+
+Desde `backend/`, inicia la aplicación actualizada. Compose retirará los contenedores huérfanos del proyecto `pedidos360` si añades `--remove-orphans`; no uses `-v`, porque elimina volúmenes. Para preservar también los contenedores detenidos mientras confirmas la migración, ejecuta primero sin esa opción:
 
 ```bash
 docker compose up -d --build
 docker compose ps
 ```
 
-Verifica desde EC2 que la web responda localmente antes de configurar Gateway:
+La red `pedidos360-ep5-infra` debe permanecer levantada. No ejecutes `docker compose down` desde la raíz durante esta configuración.
+
+Comprueba localmente desde EC2:
 
 ```bash
 curl -I http://localhost/
 curl -i http://localhost:3000/actuator/health
 ```
 
-La segunda URL es solo una comprobación técnica; no es la URL del navegador.
+Estas son comprobaciones desde el servidor, no enlaces para el navegador.
 
 ## 2. Asegurar que estás usando la IPv4 pública de EC2
 

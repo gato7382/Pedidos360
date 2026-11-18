@@ -1,4 +1,7 @@
 name: pedidos360
+
+# La infraestructura (ZooKeeper, Kafka y RabbitMQ) se levanta desde
+# ../docker-compose.yml. Esta red externa une ambos proyectos Compose.
 services:
   database:
     image: postgres:16
@@ -13,183 +16,7 @@ services:
       retries: 20
     volumes:
       - postgres-data:/var/lib/postgresql/data
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.5.0
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "127.0.0.1:2181:2181"
-    healthcheck:
-      test: ["CMD-SHELL", "cub zk-ready localhost:2181 5"]
-      interval: 10s
-      timeout: 30s
-      retries: 12
-    volumes:
-      - zookeeper-data:/var/lib/zookeeper/data
-      - zookeeper-log:/var/lib/zookeeper/log
-
-  kafka-1:
-    image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
-      KAFKA_MIN_INSYNC_REPLICAS: 2
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
-    ports:
-      - "127.0.0.1:9092:9092"
-    healthcheck:
-      test: ["CMD-SHELL", "cub kafka-ready 3 15 -b localhost:29092 >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 30s
-      retries: 15
-    volumes:
-      - kafka-1-data:/var/lib/kafka/data
-
-  kafka-2:
-    image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER_ID: 2
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
-      KAFKA_MIN_INSYNC_REPLICAS: 2
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
-    ports:
-      - "127.0.0.1:9093:9092"
-    healthcheck:
-      test: ["CMD-SHELL", "cub kafka-ready 3 15 -b localhost:29092 >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 30s
-      retries: 15
-    volumes:
-      - kafka-2-data:/var/lib/kafka/data
-
-  kafka-3:
-    image: confluentinc/cp-kafka:7.5.0
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER_ID: 3
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:9094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
-      KAFKA_MIN_INSYNC_REPLICAS: 2
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
-    ports:
-      - "127.0.0.1:9094:9092"
-    healthcheck:
-      test: ["CMD-SHELL", "cub kafka-ready 3 15 -b localhost:29092 >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 30s
-      retries: 15
-    volumes:
-      - kafka-3-data:/var/lib/kafka/data
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:v0.7.2
-    depends_on:
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-    environment:
-      KAFKA_CLUSTERS_0_NAME: pedidos360
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
-      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
-      KAFKA_CLUSTERS_0_READONLY: "false"
-      AUTH_TYPE: LOGIN_FORM
-      SPRING_SECURITY_USER_NAME: ${KAFKA_UI_USER:-pedidos360}
-      SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_PASSWORD:-pedidos360_local}
-    ports:
-      - "${KAFKA_UI_BIND:-127.0.0.1}:8080:8080"
-
-  rabbit-1:
-    image: rabbitmq:4.2.9-management
-    hostname: rabbit-1
-    environment:
-      RABBITMQ_NODENAME: rabbit@rabbit-1
-      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-shared-erlang-cookie}
-      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-admin}
-    volumes:
-      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/30-pedidos360.conf:ro
-      - rabbit-1-data:/var/lib/rabbitmq
-    ports:
-      - "127.0.0.1:5672:5672"
-      - "${RABBIT_UI_BIND:-127.0.0.1}:15672:15672"
-    healthcheck:
-      test: ["CMD-SHELL", "gosu rabbitmq rabbitmq-diagnostics -q ping && gosu rabbitmq rabbitmqctl cluster_status | grep -q 'rabbit@rabbit-2' && gosu rabbitmq rabbitmqctl cluster_status | grep -q 'rabbit@rabbit-3'"]
-      interval: 10s
-      timeout: 30s
-      retries: 15
-
-  rabbit-2:
-    image: rabbitmq:4.2.9-management
-    hostname: rabbit-2
-    environment:
-      RABBITMQ_NODENAME: rabbit@rabbit-2
-      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-shared-erlang-cookie}
-      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-admin}
-    volumes:
-      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/30-pedidos360.conf:ro
-      - rabbit-2-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 30s
-      retries: 15
-
-  rabbit-3:
-    image: rabbitmq:4.2.9-management
-    hostname: rabbit-3
-    environment:
-      RABBITMQ_NODENAME: rabbit@rabbit-3
-      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-shared-erlang-cookie}
-      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-admin}
-      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-admin}
-    volumes:
-      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/30-pedidos360.conf:ro
-      - rabbit-3-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 30s
-      retries: 15
+    networks: [pedidos360-infra]
 
   catalog-service:
     build:
@@ -205,27 +32,16 @@ services:
       DB_URL: ${DB_URL:-jdbc:postgresql://database:5432/pedidos360}
       DB_USER: ${DB_USER:-pedidos360}
       DB_PASSWORD: ${DB_PASSWORD:-pedidos360_local}
-      KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
-      RABBIT_ADDRESSES: rabbit-1:5672,rabbit-2:5672,rabbit-3:5672
-      RABBIT_USER: ${RABBIT_USER:-admin}
-      RABBIT_PASSWORD: ${RABBIT_PASSWORD:-admin}
-      RABBIT_MANAGEMENT_URL: http://rabbit-1:15672
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092,kafka-2:29092,kafka-3:29092}
+      RABBIT_ADDRESSES: ${RABBIT_ADDRESSES:-rabbit-1:5672,rabbit-2:5672,rabbit-3:5672}
+      RABBIT_USER: ${RABBITMQ_USER:-admin}
+      RABBIT_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBIT_MANAGEMENT_URL: ${RABBIT_MANAGEMENT_URL:-http://rabbit-1:15672}
     expose: ["3001"]
     depends_on:
       database:
         condition: service_healthy
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-      rabbit-1:
-        condition: service_healthy
-      rabbit-2:
-        condition: service_healthy
-      rabbit-3:
-        condition: service_healthy
+    networks: [pedidos360-infra]
 
   orders-service:
     build:
@@ -239,20 +55,9 @@ services:
     depends_on:
       database:
         condition: service_healthy
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-      rabbit-1:
-        condition: service_healthy
-      rabbit-2:
-        condition: service_healthy
-      rabbit-3:
-        condition: service_healthy
       catalog-service:
         condition: service_started
+    networks: [pedidos360-infra]
 
   audit-service:
     build:
@@ -266,18 +71,7 @@ services:
     depends_on:
       database:
         condition: service_healthy
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-      rabbit-1:
-        condition: service_healthy
-      rabbit-2:
-        condition: service_healthy
-      rabbit-3:
-        condition: service_healthy
+    networks: [pedidos360-infra]
 
   report-service:
     build:
@@ -291,18 +85,7 @@ services:
     depends_on:
       database:
         condition: service_healthy
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-      rabbit-1:
-        condition: service_healthy
-      rabbit-2:
-        condition: service_healthy
-      rabbit-3:
-        condition: service_healthy
+    networks: [pedidos360-infra]
 
   messaging-admin-service:
     build:
@@ -315,26 +98,14 @@ services:
       ENTRA_JWKS_URI: ${ENTRA_JWKS_URI:?Copia .env.example a .env}
       ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?Copia .env.example a .env}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost,http://localhost:4200,http://localhost:5173}
-      KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
-      KAFKA_REPLICATION_FACTOR: 3
-      RABBIT_ADDRESSES: rabbit-1:5672,rabbit-2:5672,rabbit-3:5672
-      RABBIT_USER: ${RABBIT_USER:-admin}
-      RABBIT_PASSWORD: ${RABBIT_PASSWORD:-admin}
-      RABBIT_MANAGEMENT_URL: http://rabbit-1:15672
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092,kafka-2:29092,kafka-3:29092}
+      KAFKA_REPLICATION_FACTOR: ${KAFKA_REPLICATION_FACTOR:-3}
+      RABBIT_ADDRESSES: ${RABBIT_ADDRESSES:-rabbit-1:5672,rabbit-2:5672,rabbit-3:5672}
+      RABBIT_USER: ${RABBITMQ_USER:-admin}
+      RABBIT_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBIT_MANAGEMENT_URL: ${RABBIT_MANAGEMENT_URL:-http://rabbit-1:15672}
     expose: ["3004"]
-    depends_on:
-      kafka-1:
-        condition: service_healthy
-      kafka-2:
-        condition: service_healthy
-      kafka-3:
-        condition: service_healthy
-      rabbit-1:
-        condition: service_healthy
-      rabbit-2:
-        condition: service_healthy
-      rabbit-3:
-        condition: service_healthy
+    networks: [pedidos360-infra]
 
   frontend-angular:
     build:
@@ -345,8 +116,8 @@ services:
       ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-1a1fed8a-8960-4a10-95a1-f9d77a98832a}
       ENTRA_SCOPE: ${ENTRA_SCOPE:-api://d0b2e05c-58b9-4d02-aade-281d22bb3074/access_as_user}
     ports:
-      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-80}:80"
-      - "${API_BIND:-127.0.0.1}:${API_PORT:-3000}:3000"
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-3000}:3000"
     depends_on:
       orders-service:
         condition: service_started
@@ -358,14 +129,12 @@ services:
         condition: service_started
       messaging-admin-service:
         condition: service_started
+    networks: [pedidos360-infra]
 
 volumes:
   postgres-data:
-  zookeeper-data:
-  zookeeper-log:
-  kafka-1-data:
-  kafka-2-data:
-  kafka-3-data:
-  rabbit-1-data:
-  rabbit-2-data:
-  rabbit-3-data:
+
+networks:
+  pedidos360-infra:
+    external: true
+    name: pedidos360-ep5-infra_default

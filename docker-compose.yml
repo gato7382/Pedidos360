@@ -30,8 +30,8 @@ x-kafka-broker: &kafka-broker
 # Los nodos RabbitMQ usan los mismos valores para la demo local.
 x-rabbit-env: &rabbit-env
   RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-pedidos360-local-cookie}
-  RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-pedidos360}
-  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-pedidos360-local}
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
 
 x-rabbit-node: &rabbit-node
   image: rabbitmq:4.2.9-management
@@ -53,7 +53,7 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "127.0.0.1:2181:2181"
+      - "0.0.0.0:2181:2181"
     healthcheck:
       test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
       interval: 10s
@@ -71,7 +71,7 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,HOST://localhost:9092
     ports:
-      - "127.0.0.1:9092:9092"
+      - "0.0.0.0:9092:9092"
     volumes:
       - kafka-data:/var/lib/kafka/data
 
@@ -82,7 +82,7 @@ services:
       KAFKA_BROKER_ID: 2
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:29092,HOST://localhost:9093
     ports:
-      - "127.0.0.1:9093:9092"
+      - "0.0.0.0:9093:9092"
     volumes:
       - kafka-2-data:/var/lib/kafka/data
 
@@ -93,7 +93,7 @@ services:
       KAFKA_BROKER_ID: 3
       KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:29092,HOST://localhost:9094
     ports:
-      - "127.0.0.1:9094:9092"
+      - "0.0.0.0:9094:9092"
     volumes:
       - kafka-3-data:/var/lib/kafka/data
 
@@ -111,7 +111,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092,kafka-2:29092,kafka-3:29092
       KAFKA_CLUSTERS_0_READONLY: "false"
     ports:
-      - "127.0.0.1:8080:8080"
+      - "0.0.0.0:8080:8080"
 
   rabbit-1:
     <<: *rabbit-node
@@ -120,8 +120,8 @@ services:
       <<: *rabbit-env
       RABBITMQ_NODENAME: rabbit@rabbit-1
     ports:
-      - "127.0.0.1:5672:5672"
-      - "127.0.0.1:15672:15672"
+      - "0.0.0.0:5672:5672"
+      - "0.0.0.0:15672:15672"
     volumes:
       - rabbit-1-data:/var/lib/rabbitmq
 

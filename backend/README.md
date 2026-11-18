@@ -1,6 +1,6 @@
 # Pedidos360 backend para EP5
 
-Backend Spring Boot 3.5.16 dividido en microservicios Java. Incluye catálogo y pedidos con PostgreSQL, eventos de pedido en Kafka, auditoría en Kafka y RabbitMQ con colas quorum y DLQ, reportes, administración de Kafka y administración de RabbitMQ.
+Backend Spring Boot 3.5.16 dividido en microservicios Java. Este Compose levanta PostgreSQL, los cinco microservicios y Angular. Kafka, ZooKeeper, Kafka UI y el clúster RabbitMQ se levantan por separado desde `../docker-compose.yml`; ambos proyectos se comunican por la red Docker compartida `pedidos360-ep5-infra_default`.
 
 ## Requisitos locales
 
@@ -10,15 +10,22 @@ Backend Spring Boot 3.5.16 dividido en microservicios Java. Incluye catálogo y 
 
 Copia `.env.example` a `.env`. El Tenant ID, Client ID, audiencia y scope corresponden a los valores confirmados para este proyecto. Cambia las contraseñas antes de usarlo en una instancia pública. El rol de aplicación `Admin` debe estar incluido en el access token de las cuentas autorizadas para administrar Kafka y RabbitMQ. Si conectas una base administrada en AWS, cambia `DB_URL` al endpoint PostgreSQL de RDS y configura sus credenciales en ese archivo.
 
-Desde esta carpeta:
+Primero, desde la carpeta raíz del proyecto, levanta la infraestructura:
 
-```powershell
-Copy-Item .env.example .env
+```bash
+cd ..
+docker compose up -d
+```
+
+Después, desde esta carpeta, configura el entorno de aplicación y levanta los servicios:
+
+```bash
+cp .env.example .env
 docker compose up --build -d
 docker compose ps
 ```
 
-La primera ejecución compila los cinco servicios Spring Boot y la interfaz Angular, luego levanta PostgreSQL, tres brokers Kafka con ZooKeeper, Kafka UI y un clúster RabbitMQ de tres nodos.
+La primera ejecución compila los cinco servicios Spring Boot y la interfaz Angular. PostgreSQL usa un volumen persistente. No inicies Kafka/RabbitMQ desde este Compose: ya están definidos en el Compose de la raíz y duplicarlos causa conflictos de puertos.
 
 ## Servicios
 
@@ -30,7 +37,7 @@ La primera ejecución compila los cinco servicios Spring Boot y la interfaz Angu
 - Reportes en `/api/reports`
 - Administración de Kafka en `/api/admin/kafka`
 - Administración de RabbitMQ en `/api/admin/rabbit`
-- Kafka UI en el puerto 8080 con formulario de inicio de sesión. Las credenciales se definen en `.env`
+- Kafka UI en el puerto 8080; pertenece al Compose de la raíz.
 - RabbitMQ Management en el puerto 15672, limitado a localhost de forma predeterminada
 - PostgreSQL queda en la red interna de Docker
 
@@ -78,7 +85,7 @@ Para iniciar sesión con Angular, registra en Entra `http://localhost/redirect` 
 
 ## AWS
 
-Sigue [Despliegue en AWS](../DEPLOY-AWS.md) para configurar el HTTP API, su autorizador JWT, CORS y la conexión HTTPS al proxy de EC2. El proxy enruta `/api` al puerto local 3000 de Nginx. Los puertos de los brokers y de los paneles quedan en localhost de forma predeterminada.
+Sigue [Despliegue en AWS](../DEPLOY-AWS.md) para configurar el HTTP API, su autorizador JWT y la conexión al proxy Nginx de EC2. En la instancia, levanta primero `../docker-compose.yml` y luego este Compose de aplicación. El proxy sirve Angular por el puerto 80 y enruta `/api` por el puerto 3000. Los puertos de los brokers y los paneles quedan en localhost de forma predeterminada.
 
 Para conectar una base administrada, establece `DB_URL` al endpoint PostgreSQL de RDS y usa sus credenciales en `.env`. La base PostgreSQL local de Compose sirve para desarrollo y demostración.
 
